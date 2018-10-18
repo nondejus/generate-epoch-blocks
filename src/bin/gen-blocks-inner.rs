@@ -9,15 +9,14 @@ extern crate serde_json;
 use byteorder::{BigEndian, ByteOrder};
 use lmdb::LmdbResultExt;
 use nanocurrency_types::{Account, BlockHash, BlockInner};
-use serde::ser::{SerializeSeq, Serializer};
 use std::collections::HashSet;
 use std::env;
-use std::io;
+use std::io::{self, Write};
 use std::process;
 
 fn main() {
     if atty::is(atty::Stream::Stdout) {
-        eprintln!("Stdout is a terminal. This output is very large and does not have newlines.");
+        eprintln!("Stdout is a terminal. This output is very large.");
         eprintln!("Please pipe this somewhere.");
         process::exit(1);
     }
@@ -53,11 +52,14 @@ fn main() {
         *o = *i;
     }
     let stdout = io::stdout();
-    let stdout = stdout.lock();
-    let mut output_ser = serde_json::Serializer::new(stdout);
-    let mut output_seq = output_ser
-        .serialize_seq(None)
-        .expect("Failed to start serializing blocks inner output sequence");
+    let mut stdout = stdout.lock();
+    let mut output_block = |block_inner| {
+        serde_json::to_writer(&mut stdout, &block_inner)
+            .expect("Failed to serialize block into stdout");
+        stdout
+            .write_all(b"\n")
+            .expect("Failed to write newline to stdout");
+    };
     let txn = lmdb::ReadTransaction::new(&env).unwrap();
     let access = txn.access();
     let mut accounts_it = txn.cursor(&accounts_v0_db).unwrap();
@@ -92,14 +94,13 @@ fn main() {
         }
         let representative = representative.expect("Representative block doesn't exist");
         let balance = &account_info[96..112];
-        output_seq
-            .serialize_element(&BlockInner::State {
-                account: Account(account),
-                previous: BlockHash(head_block),
-                representative: Account(representative),
-                balance: BigEndian::read_u128(balance),
-                link: epoch_link,
-            }).expect("Failed to serialize block into stdout");
+        output_block(BlockInner::State {
+            account: Account(account),
+            previous: BlockHash(head_block),
+            representative: Account(representative),
+            balance: BigEndian::read_u128(balance),
+            link: epoch_link,
+        });
         current_kv = accounts_it.next::<[u8], [u8]>(&access).to_opt().unwrap();
     }
     let mut pending_it = txn.cursor(&pending_v0_db).unwrap();
@@ -121,19 +122,15 @@ fn main() {
             if !v0_acct_exists && !v1_acct_exists {
                 let mut destination_bytes = [0u8; 32];
                 destination_bytes.copy_from_slice(destination);
-                output_seq
-                    .serialize_element(&BlockInner::State {
-                        account: Account(destination_bytes),
-                        previous: BlockHash([0u8; 32]),
-                        representative: Account([0u8; 32]),
-                        balance: 0,
-                        link: epoch_link,
-                    }).expect("Failed to serialize block into stdout");
+                output_block(BlockInner::State {
+                    account: Account(destination_bytes),
+                    previous: BlockHash([0u8; 32]),
+                    representative: Account([0u8; 32]),
+                    balance: 0,
+                    link: epoch_link,
+                });
             }
         }
         current_kv = pending_it.next::<[u8], [u8]>(&access).to_opt().unwrap();
     }
-    output_seq
-        .end()
-        .expect("Failed to finish writing blocks into stdout");
 }

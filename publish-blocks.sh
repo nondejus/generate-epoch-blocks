@@ -7,21 +7,11 @@ if [ $# -lt 4 ]; then
     exit 1
 fi
 
-jq -rcn --stream \
-       --argfile work <(jq -Rsc 'split("\n")' "$2") \
-       --argfile signature "$3" '
-            def enumerate(i):
-                foreach i as $item (
-                    [-1, null];
-                    [.[0] + 1, $item];
-                    .
-                );
-            enumerate(fromstream(1 | truncate_stream(inputs)))
-            | .[1] * { "work": $work[.[0]] } * { "signature": $signature[.[0]] }
+while IFS='' read -r blockInner <&11 && IFS='' read -r work <&12 && IFS='' read -r signature <&13; do
+    rpcCall="$(jq -nc --argjson blockInner "$blockInner" --arg work "$work" --arg signature "$signature" \
+        '$blockInner * { "work": $work } * { "signature": $signature }
             | tostring
-            | { "action": "process", "block": . }
-       ' < "$1" | \
-while IFS='' read -r rpcCall; do
+            | { "action": "process", "block": . }')"
     rpcResult="$(curl -s --show-error "$4" -d "$rpcCall")"
     error="$(jq -er .error <(echo "$rpcResult"))"
     if [ "$error" = "Fork" ]; then
@@ -30,4 +20,4 @@ while IFS='' read -r rpcCall; do
         echo "Encountered unexpected error '$error' from RPC call $rpcCall" >&2
         exit 2
     fi
-done
+done 11<"$1" 12<"$2" 13<"$3"
