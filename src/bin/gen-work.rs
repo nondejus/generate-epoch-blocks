@@ -7,7 +7,7 @@ extern crate serde;
 extern crate serde_derive;
 extern crate serde_json;
 
-use nanocurrency_types::BlockInner;
+use nanocurrency_types::{work_threshold, work_value, BlockInner, Network};
 use serde::de::{Deserializer, SeqAccess, Visitor};
 use std::env;
 use std::fmt;
@@ -45,17 +45,45 @@ impl<'a, W: Write + 'a> Visitor<'a> for GenWorkVisitor<'a, W> {
                 action: "work_generate",
                 hash: &root_string,
             };
-            let mut res = self
-                .0
-                .post(self.1)
-                .json(&req)
-                .send()
-                .expect("Failed to send work_generate request to RPC")
-                .json::<WorkGenerateRes>()
-                .expect("Failed to parse RPC work_generate response");
-            if let Some(error) = res.error {
-                panic!("RPC work_generate returned error: {}", error);
-            }
+            let res = loop {
+                let mut sent_req = self.0.post(self.1).json(&req).send();
+                let mut res = match sent_req {
+                    Ok(x) => x,
+                    Err(err) => {
+                        eprintln!("Failed to send work_generate request to RPC: {}", err);
+                        continue;
+                    }
+                };
+                let res = match res.json::<WorkGenerateRes>() {
+                    Ok(x) => x,
+                    Err(err) => {
+                        eprintln!("Failed to parse work_generate response: {}", err);
+                        continue;
+                    }
+                };
+                if let Some(error) = res.error {
+                    eprintln!("RPC work_generate returned error: {}", error);
+                    continue;
+                }
+                let work = match u64::from_str_radix(&res.work, 16) {
+                    Ok(x) => x,
+                    Err(err) => {
+                        eprintln!(
+                            "Failed to parse work_generate response work value as hex: {}",
+                            err,
+                        );
+                        continue;
+                    }
+                };
+                if work_value(root, work) < work_threshold(Network::Live) {
+                    eprintln!(
+                        "work_generate response doesn't meet threshold: root {} work {}",
+                        root_string, res.work,
+                    );
+                    continue;
+                }
+                break res;
+            };
             writeln!(self.3, "{}", res.work).expect("Failed to write to stdout");
         }
         Ok(())
