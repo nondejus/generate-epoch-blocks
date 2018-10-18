@@ -8,7 +8,7 @@ if [ $# -lt 4 ]; then
 fi
 
 jq -rcn --stream \
-       --argfile work "$2" \
+       --argfile work <(jq -Rsc 'split("\n")' "$2") \
        --argfile signature "$3" '
             def enumerate(i):
                 foreach i as $item (

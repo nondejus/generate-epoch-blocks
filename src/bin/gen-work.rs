@@ -9,16 +9,14 @@ extern crate serde_json;
 
 use nanocurrency_types::BlockInner;
 use serde::de::{Deserializer, SeqAccess, Visitor};
-use serde::ser::{SerializeSeq, Serializer};
 use std::env;
 use std::fmt;
 use std::fs::File;
-use std::io::{self, BufReader};
-use std::process;
+use std::io::{self, BufReader, Write};
 
-struct GenWorkVisitor<'a, S: SerializeSeq + 'a>(&'a reqwest::Client, &'a str, &'a mut S);
+struct GenWorkVisitor<'a, W: Write + 'a>(&'a reqwest::Client, &'a str, usize, &'a mut W);
 
-impl<'a, S: SerializeSeq + 'a> Visitor<'a> for GenWorkVisitor<'a, S> {
+impl<'a, W: Write + 'a> Visitor<'a> for GenWorkVisitor<'a, W> {
     type Value = ();
 
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -26,6 +24,9 @@ impl<'a, S: SerializeSeq + 'a> Visitor<'a> for GenWorkVisitor<'a, S> {
     }
 
     fn visit_seq<A: SeqAccess<'a>>(self, mut seq: A) -> Result<(), A::Error> {
+        for _ in 0..self.2 {
+            seq.next_element::<serde::de::IgnoredAny>()?;
+        }
         while let Some(block_inner) = seq.next_element::<BlockInner>()? {
             #[derive(Serialize)]
             struct WorkGenerateReq<'a> {
@@ -44,55 +45,45 @@ impl<'a, S: SerializeSeq + 'a> Visitor<'a> for GenWorkVisitor<'a, S> {
                 action: "work_generate",
                 hash: &root_string,
             };
-            let mut res = self.0
+            let mut res = self
+                .0
                 .post(self.1)
                 .json(&req)
                 .send()
                 .expect("Failed to send work_generate request to RPC")
                 .json::<WorkGenerateRes>()
-                    .expect("Failed to parse RPC work_generate response");
+                .expect("Failed to parse RPC work_generate response");
             if let Some(error) = res.error {
                 panic!("RPC work_generate returned error: {}", error);
             }
-            self.2
-                .serialize_element(&res.work)
-                .map_err(serde::de::Error::custom)?;
+            writeln!(self.3, "{}", res.work).expect("Failed to write to stdout");
         }
         Ok(())
     }
 }
 
 fn main() {
-    if atty::is(atty::Stream::Stdout) {
-        eprintln!("Stdout is a terminal. This output is very large and does not have newlines.");
-        eprintln!("Please pipe this somewhere.");
-        process::exit(1);
-    }
     let mut args = env::args();
     args.next();
     let blocks_inner_file = args
         .next()
         .expect("Expected blocks inner file as first argument");
-    let rpc_url = args
+    let rpc_url = args.next().expect("Expected RPC URL as second argument");
+    let skip_blocks = args
         .next()
-        .expect("Expected RPC URL as second argument");
+        .unwrap_or_else(|| "0".into())
+        .parse()
+        .expect("Failed to parse third argument as number of blocks to skip");
     let blocks_inner_file =
         BufReader::new(File::open(blocks_inner_file).expect("Failed to open blocks inner file"));
     let mut blocks_inner_deser = serde_json::Deserializer::from_reader(blocks_inner_file);
     let stdout = io::stdout();
-    let stdout = stdout.lock();
-    let mut output_ser = serde_json::Serializer::new(stdout);
-    let mut output_seq = output_ser
-        .serialize_seq(None)
-        .expect("Failed to start serializing blocks output sequence");
+    let mut stdout = stdout.lock();
     let req_client = reqwest::Client::new();
     {
-        let visitor = GenWorkVisitor(&req_client, &rpc_url, &mut output_seq);
+        let visitor = GenWorkVisitor(&req_client, &rpc_url, skip_blocks, &mut stdout);
         blocks_inner_deser
             .deserialize_seq(visitor)
             .expect("Failed to start deserializing blocks inner sequence");
     }
-    output_seq
-        .end()
-        .expect("Failed to finish writing blocks into stdout");
 }
