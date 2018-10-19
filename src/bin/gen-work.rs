@@ -114,21 +114,25 @@ fn main() {
                             return Err((root, root_string, false));
                         }
                         Ok(work_s)
-                    }).then(move |x| match x {
-                        Ok(res) => future::Either::A(future::ok(future::Loop::Break(res))),
-                        Err((root, root_string, was_timeout)) => {
-                            let result = future::Loop::Continue((req, root, root_string));
-                            if was_timeout {
-                                // If it was a timeout we immediately retry
-                                future::Either::A(future::ok(result))
-                            } else {
-                                future::Either::B(
-                                    Delay::new(Instant::now() + Duration::from_secs(5))
-                                        .map_err(|e| panic!("Tokio timer error: {}", e))
-                                        .map(move |_| result)
-                                )
-                            }
+                    }).then(move |x| {
+                        fn on_timer_error(e: tokio::timer::Error) {
+                            panic!("Tokio timer error: {}", e);
                         }
+                        let (res, delay) = match x {
+                            Ok(res) => (future::Loop::Break(res), 1),
+                            Err((root, root_string, was_timeout)) => {
+                                let result = future::Loop::Continue((req, root, root_string));
+                                if was_timeout {
+                                    // If it was a timeout we immediately retry
+                                    (result, 0)
+                                } else {
+                                    (result, 5)
+                                }
+                            }
+                        };
+                        Delay::new(Instant::now() + Duration::from_secs(delay))
+                            .map_err(on_timer_error)
+                            .map(move |_| res)
                     })
             })
         }).buffered(parallel_requests)
