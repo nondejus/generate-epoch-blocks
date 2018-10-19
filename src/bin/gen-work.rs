@@ -57,7 +57,9 @@ fn main() {
             struct WorkGenerateRes {
                 #[serde(default)]
                 error: Option<String>,
-                work: String,
+                #[serde(default)]
+                status: Option<String>,
+                work: Option<String>,
             }
             let root: [u8; 32] = block_inner.into_root().into();
             let root_string = hex::encode_upper(root);
@@ -82,11 +84,18 @@ fn main() {
                                 return Err((root, root_string));
                             }
                         };
-                        if let Some(error) = res.error {
-                            eprintln!("RPC work_generate returned error: {}", error);
-                            return Err((root, root_string));
-                        }
-                        let work = match u64::from_str_radix(&res.work, 16) {
+                        let work = match res.work {
+                            Some(work) => work,
+                            None => {
+                                if let Some(error) = res.error.or(res.status) {
+                                    eprintln!("RPC work_generate returned error: {}", error);
+                                    return Err((root, root_string));
+                                }
+                                eprintln!("RPC work_generate response didn't include `work`, `status`, or `error`");
+                                return Err((root, root_string));
+                            }
+                        };
+                        let work = match u64::from_str_radix(&work, 16) {
                             Ok(x) => x,
                             Err(err) => {
                                 eprintln!(
@@ -99,11 +108,11 @@ fn main() {
                         if work_value(&root, work) < work_threshold(Network::Live) {
                             eprintln!(
                                 "work_generate response doesn't meet threshold: root {} work {}",
-                                &root_string, res.work,
+                                &root_string, work,
                             );
                             return Err((root, root_string));
                         }
-                        Ok(res)
+                        Ok(work)
                     }).then(move |x| match x {
                         Ok(res) => future::Either::A(future::ok(future::Loop::Break(res))),
                         Err((root, root_string)) => future::Either::B(
@@ -114,8 +123,8 @@ fn main() {
                     })
             })
         }).buffered(parallel_requests)
-        .for_each(|res| {
-            writeln!(io::stdout(), "{}", res.work).expect("Failed to write to stdout");
+        .for_each(|work| {
+            writeln!(io::stdout(), "{}", work).expect("Failed to write to stdout");
             future::ok(())
         });
     tokio::run(fut);
