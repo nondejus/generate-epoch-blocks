@@ -76,7 +76,7 @@ fn main() {
                     .json(&req)
                     .send()
                     .and_then(|mut res| res.json::<WorkGenerateRes>())
-                    .timeout(Duration::from_secs(15))
+                    .timeout(Duration::from_secs(5 * parallel_requests as u64))
                     .then(move |res| {
                         let res = match res {
                             Ok(x) => x,
