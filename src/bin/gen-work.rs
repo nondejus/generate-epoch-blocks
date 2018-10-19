@@ -119,18 +119,18 @@ fn main() {
                             panic!("Tokio timer error: {}", e);
                         }
                         let (res, delay) = match x {
-                            Ok(res) => (future::Loop::Break(res), 1),
+                            Ok(res) => (future::Loop::Break(res), Duration::from_millis(500)),
                             Err((root, root_string, was_timeout)) => {
                                 let result = future::Loop::Continue((req, root, root_string));
                                 if was_timeout {
                                     // If it was a timeout we immediately retry
-                                    (result, 0)
+                                    (result, Duration::from_secs(0))
                                 } else {
-                                    (result, 5)
+                                    (result, Duration::from_secs(5))
                                 }
                             }
                         };
-                        Delay::new(Instant::now() + Duration::from_secs(delay))
+                        Delay::new(Instant::now() + delay)
                             .map_err(on_timer_error)
                             .map(move |_| res)
                     })
