@@ -76,12 +76,13 @@ fn main() {
                     .json(&req)
                     .send()
                     .and_then(|mut res| res.json::<WorkGenerateRes>())
+                    .timeout(Duration::from_secs(15))
                     .then(move |res| {
                         let res = match res {
                             Ok(x) => x,
                             Err(err) => {
                                 eprintln!("Failed to call work_generate RPC: {}", err);
-                                return Err((root, root_string));
+                                return Err((root, root_string, err.is_elapsed()));
                             }
                         };
                         let work_s = match res.work {
@@ -89,10 +90,10 @@ fn main() {
                             None => {
                                 if let Some(error) = res.error.or(res.status) {
                                     eprintln!("RPC work_generate returned error: {}", error);
-                                    return Err((root, root_string));
+                                    return Err((root, root_string, false));
                                 }
                                 eprintln!("RPC work_generate response didn't include `work`, `status`, or `error`");
-                                return Err((root, root_string));
+                                return Err((root, root_string, false));
                             }
                         };
                         let work = match u64::from_str_radix(&work_s, 16) {
@@ -102,7 +103,7 @@ fn main() {
                                     "Failed to parse work_generate response work value as hex: {}",
                                     err,
                                 );
-                                return Err((root, root_string));
+                                return Err((root, root_string, false));
                             }
                         };
                         if work_value(&root, work) < work_threshold(Network::Live) {
@@ -110,16 +111,24 @@ fn main() {
                                 "work_generate response doesn't meet threshold: root {} work {}",
                                 &root_string, work_s,
                             );
-                            return Err((root, root_string));
+                            return Err((root, root_string, false));
                         }
                         Ok(work_s)
                     }).then(move |x| match x {
                         Ok(res) => future::Either::A(future::ok(future::Loop::Break(res))),
-                        Err((root, root_string)) => future::Either::B(
-                            Delay::new(Instant::now() + Duration::from_secs(5))
-                                .map_err(|e| panic!("Tokio timer error: {}", e))
-                                .map(move |_| future::Loop::Continue((req, root, root_string))),
-                        ),
+                        Err((root, root_string, was_timeout)) => {
+                            let result = future::Loop::Continue((req, root, root_string));
+                            if was_timeout {
+                                // If it was a timeout we immediately retry
+                                future::Either::A(future::ok(result))
+                            } else {
+                                future::Either::B(
+                                    Delay::new(Instant::now() + Duration::from_secs(5))
+                                        .map_err(|e| panic!("Tokio timer error: {}", e))
+                                        .map(move |_| result)
+                                )
+                            }
+                        }
                     })
             })
         }).buffered(parallel_requests)
