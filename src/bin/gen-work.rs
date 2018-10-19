@@ -84,7 +84,7 @@ fn main() {
                                 return Err((root, root_string));
                             }
                         };
-                        let work = match res.work {
+                        let work_s = match res.work {
                             Some(work) => work,
                             None => {
                                 if let Some(error) = res.error.or(res.status) {
@@ -95,7 +95,7 @@ fn main() {
                                 return Err((root, root_string));
                             }
                         };
-                        let work = match u64::from_str_radix(&work, 16) {
+                        let work = match u64::from_str_radix(&work_s, 16) {
                             Ok(x) => x,
                             Err(err) => {
                                 eprintln!(
@@ -108,11 +108,11 @@ fn main() {
                         if work_value(&root, work) < work_threshold(Network::Live) {
                             eprintln!(
                                 "work_generate response doesn't meet threshold: root {} work {}",
-                                &root_string, work,
+                                &root_string, work_s,
                             );
                             return Err((root, root_string));
                         }
-                        Ok(work)
+                        Ok(work_s)
                     }).then(move |x| match x {
                         Ok(res) => future::Either::A(future::ok(future::Loop::Break(res))),
                         Err((root, root_string)) => future::Either::B(
