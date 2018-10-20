@@ -27,7 +27,7 @@ fn main() {
         builder.set_maxdbs(64).unwrap();
         builder
             .open(
-                &args.next().expect("Expected path as arg"),
+                &args.next().expect("Expected DB path as argument"),
                 lmdb::open::NOSUBDIR | lmdb::open::NOTLS,
                 0o600,
             ).unwrap()
