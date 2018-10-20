@@ -4,7 +4,7 @@ extern crate nanocurrency_types;
 extern crate serde;
 extern crate serde_json;
 
-use byteorder::{ByteOrder, LittleEndian};
+use byteorder::{ByteOrder, BigEndian};
 use nanocurrency_types::{work_threshold, work_value, BlockInner, Network};
 use std::env;
 use std::fs::File;
@@ -25,7 +25,9 @@ fn main() {
     let work_file = BufReader::new(File::open(work_file).expect("Failed to open blocks work file"));
     let blocks_inner = serde_json::Deserializer::from_reader(blocks_inner_file).into_iter();
     let work_values = work_file.lines();
-    for (i, (block_inner, work)) in blocks_inner.zip(work_values).enumerate() {
+    let mut i = 0;
+    for (block_inner, work) in blocks_inner.zip(work_values) {
+        i += 1;
         let block_inner: BlockInner = block_inner.expect("Failed to read block inner from file");
         let work = work.expect("Failed to read block work from file");
         let work = hex::decode(work).expect("Failed to decode work as hex");
@@ -36,7 +38,7 @@ fn main() {
                 work.len(),
             );
         }
-        let work = LittleEndian::read_u64(&work);
+        let work = BigEndian::read_u64(&work);
         if work_value(block_inner.root_bytes(), work) < work_threshold(Network::Live) {
             println!();
             eprintln!("Invalid work for block {}", i);
@@ -47,4 +49,5 @@ fn main() {
             io::stdout().flush().expect("Failed to flush stdout");
         }
     }
+    println!("\r{}", i);
 }
