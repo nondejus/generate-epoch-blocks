@@ -3,12 +3,17 @@
 set -eu
 
 if [ $# -lt 4 ]; then
-    echo "Usage: publish-blocks.sh blocks-inner.json blocks-work.json blocks-signatures.json <RPC URL> [publish delay]" >&2
+    echo "Usage: publish-blocks.sh blocks-inner blocks-work blocks-signatures <RPC URL> [publish delay] [offset]" >&2
     exit 1
 fi
 
 i=0
+offset="${6:-0}"
 while IFS='' read -r blockInner <&11 && IFS='' read -r work <&12 && IFS='' read -r signature <&13; do
+    if [ "$offset" -gt 0 ]; then
+        offset=$(("$offset"-1))
+        continue
+    fi
     rpcCall="$(jq -nc --argjson blockInner "$blockInner" --arg work "$work" --arg signature "$signature" \
         '$blockInner * { "work": $work } * { "signature": $signature }
             | tostring
