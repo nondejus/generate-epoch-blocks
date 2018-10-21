@@ -20,4 +20,5 @@ while IFS='' read -r blockInner <&11 && IFS='' read -r work <&12 && IFS='' read 
         echo "Encountered unexpected error '$error' from RPC call $rpcCall" >&2
         exit 2
     fi
+    sleep 0.1
 done 11<"$1" 12<"$2" 13<"$3"
