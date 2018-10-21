@@ -44,7 +44,7 @@ fn main() {
             eprintln!("Invalid work for block {}", i);
             process::exit(1);
         }
-        if i % 100 == 0 {
+        if i % 1000 == 0 {
             print!("\r{}", i);
             io::stdout().flush().expect("Failed to flush stdout");
         }
