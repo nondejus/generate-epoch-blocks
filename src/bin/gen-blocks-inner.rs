@@ -67,6 +67,7 @@ fn main() {
     while let Some((account_slice, account_info)) = current_kv {
         let mut account = [0u8; 32];
         account.clone_from_slice(account_slice);
+        assert_ne!(account, epoch_link);
         let mut head_block = [0u8; 32];
         head_block.clone_from_slice(&account_info[..32]);
         let rep_block = &account_info[32..64];
@@ -108,7 +109,10 @@ fn main() {
     let mut seen_destinations = HashSet::new();
     while let Some((pending_key, _pending_info)) = current_kv {
         let destination = &pending_key[..32];
-        if destination != &[0u8; 32] && seen_destinations.insert(destination) {
+        if destination != &[0u8; 32]
+            && destination != &epoch_link
+            && seen_destinations.insert(destination)
+        {
             let v0_acct_exists = access
                 .get::<_, [u8]>(&accounts_v0_db, destination)
                 .to_opt()
