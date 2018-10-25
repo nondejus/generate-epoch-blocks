@@ -12,14 +12,8 @@ use nanocurrency_types::BlockInner;
 use std::env;
 use std::fs::File;
 use std::io::{self, BufReader, Write};
-use std::process;
 
 fn main() {
-    if atty::is(atty::Stream::Stdout) {
-        eprintln!("Stdout is a terminal. This output is very large.");
-        eprintln!("Please pipe this somewhere.");
-        process::exit(1);
-    }
     let mut args = env::args();
     args.next();
     let blocks_inner_file = args
